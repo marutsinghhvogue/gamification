@@ -1,0 +1,112 @@
+@RestController
+@RequestMapping("/game")
+public class GameController {
+
+    @Autowired
+    private QuestionRepository questionRepository;
+
+    @Autowired
+    private UserResponseRepository userResponseRepository;
+
+    @Autowired
+    private WinnerRepository winnerRepository;
+
+    @GetMapping("/single-answer-quiz/question")
+    public Question getQuestion() {
+        return questionRepository.findById(1L).orElseThrow(() -> new RuntimeException("Question not found"));
+    }
+
+    @RestController
+@RequestMapping("/quiz")
+public class QuizController {
+
+    @Autowired
+    private QuizRepository quizRepository;
+
+    @Autowired
+    private ResponseRepository responseRepository;
+
+    // Start the quiz
+    @PostMapping("/start")
+    public ResponseEntity<String> startQuiz(@RequestParam Long quizId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new RuntimeException("Quiz not found"));
+
+        quiz.startQuiz();
+        quizRepository.save(quiz);
+
+        return ResponseEntity.ok("Quiz started. It will be active for 10 minutes.");
+    }
+
+    // Submit a response
+    @PostMapping("/submit")
+    public ResponseEntity<String> submitResponse(@RequestParam Long quizId, @RequestParam String userAnswer) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new RuntimeException("Quiz not found"));
+
+        if (!quiz.isQuizActive()) {
+            return ResponseEntity.badRequest().body("Quiz is no longer active.");
+        }
+
+        Response response = new Response(quiz, userAnswer);
+        responseRepository.save(response);
+
+        return ResponseEntity.ok("Response submitted.");
+    }
+
+    // Check if quiz is active
+    @GetMapping("/status/{quizId}")
+    public ResponseEntity<String> checkQuizStatus(@PathVariable Long quizId) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new RuntimeException("Quiz not found"));
+
+        if (quiz.isQuizActive()) {
+            return ResponseEntity.ok("Quiz is active.");
+        } else {
+            return ResponseEntity.ok("Quiz is no longer active.");
+        }
+    }
+
+    @PostMapping("/single-answer-quiz/submitResponse")
+    public String submitResponse(@RequestParam Long userId, @RequestParam Long questionId, @RequestParam String response) {
+        Question quiz = questionRepository.findById(questionId)
+                            .orElseThrow(() -> new RuntimeException("Question not found"));
+
+        if (!quiz.isQuizActive()) {
+            return ResponseEntity.badRequest().body("Quiz is no longer active.");
+        }
+
+        boolean isCorrect = quiz.getCorrectOption().equals(response);
+
+        // Save User Response
+        UserResponse userResponse = new UserResponse();
+        userResponse.setUserId(userId);
+        userResponse.setQuestionId(questionId);
+        userResponse.setResponse(response);
+        userResponse.setIsCorrect(isCorrect);
+        userResponseRepository.save(userResponse);
+
+        if (isCorrect) {
+            // Check if there is already a winner
+            Optional<Winner> existingWinner = winnerRepository.findByQuestionId(questionId);
+            if (existingWinner.isEmpty()) {
+                // Save the winner
+                Winner winner = new Winner();
+                winner.setUserId(userId);
+                winner.setQuestionId(questionId);
+                winnerRepository.save(winner);
+                
+                return "Congratulations! You're the fastest correct answer!";
+            }
+            return "Correct, but someone was faster!";
+        }
+
+        return "Wrong answer. Try again!";
+    }
+
+    @GetMapping("/winner/{questionId}")
+    public Winner getWinner(@PathVariable Long questionId) {
+        return winnerRepository.findByQuestionId(questionId)
+                .orElseThrow(() -> new RuntimeException("No winner yet for this question"));
+    }
+}
